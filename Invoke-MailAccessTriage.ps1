@@ -81,7 +81,18 @@ function Get-ConnParams([string]$cmd) {
     $p
 }
 function Connect-Exo  { if (-not (Test-Conn))       { $p = Get-ConnParams 'Connect-ExchangeOnline'; Connect-ExchangeOnline @p } }
-function Connect-Ipps { if (-not (Test-Conn -Ipps)) { $p = Get-ConnParams 'Connect-IPPSSession';    Connect-IPPSSession @p } }
+# Start-ComplianceSearch now requires an IPPS session opened with -EnableSearchOnlySession (MC1213770).
+# Drop any existing IPPS connection (opened without it) and reconnect with the flag. EXO connection is left alone.
+function Connect-Ipps {
+    $p = Get-ConnParams 'Connect-IPPSSession'
+    if ((Get-Command Connect-IPPSSession).Parameters.ContainsKey('EnableSearchOnlySession')) { $p.EnableSearchOnlySession = $true }
+    else { Write-Warning "ExchangeOnlineManagement too old for -EnableSearchOnlySession; Start-ComplianceSearch may fail. Update-Module ExchangeOnlineManagement." }
+    try {
+        Get-ConnectionInformation -ErrorAction Stop | Where-Object { $_.IsEopSession -and $_.State -eq 'Connected' } |
+            ForEach-Object { Disconnect-ExchangeOnline -ConnectionId $_.ConnectionId -Confirm:$false }
+    } catch { }
+    Connect-IPPSSession @p
+}
 #endregion
 
 #region 1. parse export
