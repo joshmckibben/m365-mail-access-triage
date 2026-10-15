@@ -15,7 +15,10 @@ Purview audit export → pick bad IPs → `MailItemsAccessed` breakdown (Bind me
    ```powershell
    .\Invoke-MailAccessTriage.ps1 -AuditCsv "C:\path\export.csv" -CaseName "Client-BEC-2026-10" -AdminUpn you@tenant.com
    ```
+   Or run with no parameters and answer the prompts. At the CSV path prompt, enter the path **without quotation marks** (quotes are stripped if you add them anyway).
 3. Select the bad IPs in the grid → OK.
+   - If `-CaseName` wasn't given, you're asked for the case name next.
+   - If that case already exists, you're shown its searches and choose to [U]se it or enter a [N]ew name.
 4. Purview → eDiscovery → case → each search → Export → PST.
 
 `-NoSearch` builds the CSVs and queries without creating searches.

@@ -19,10 +19,10 @@
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][string]$AuditCsv,
+    [string]$AuditCsv,                # prompted if omitted
     [string]$OutDir = ".\triage_$(Get-Date -Format yyyyMMdd_HHmmss)",
     [string]$Mailbox,                 # defaults to most common MailboxOwnerUPN in the export
-    [string]$CaseName,                # created if missing; omit = standalone content searches
+    [string]$CaseName,                # prompted if omitted (unless -NoSearch)
     [string]$AdminUpn,                # pre-fills sign-in for EXO / IPPS
     [string]$SearchPrefix = 'BadIP',
     [int]$MaxQueryLength = 3500,      # KQL chars per search; lower if searches error on length
@@ -96,6 +96,14 @@ function Connect-Ipps {
 #endregion
 
 #region 1. parse export
+# quotes stripped either way; prompt loops until the file exists
+$AuditCsv = "$AuditCsv".Trim().Trim('"', "'")
+while (-not $AuditCsv -or -not (Test-Path -LiteralPath $AuditCsv -PathType Leaf)) {
+    if ($AuditCsv) { Write-Warning "File not found: $AuditCsv" }
+    Write-Host "Enter the full path to the Purview audit export CSV." -ForegroundColor Cyan
+    Write-Host "  NO quotation marks, even if the path has spaces. e.g. C:\Users\Josh\Downloads\Audit Export.csv" -ForegroundColor Cyan
+    $AuditCsv = (Read-Host 'Audit CSV path').Trim().Trim('"', "'")
+}
 $rows = Import-Csv -LiteralPath $AuditCsv
 if (-not $rows) { throw "Empty CSV." }
 if (-not ($rows[0].PSObject.Properties.Name -contains 'AuditData')) { throw "No AuditData column - not a Purview audit export?" }
@@ -147,6 +155,14 @@ $bad = $summary | Out-GridView -Title 'Select BAD IPs (Ctrl/Shift-click), then O
 if (-not $bad) { Write-Host 'No IPs selected. ip_summary.csv written; exiting.'; return }
 $badSet = @($bad.IP)
 Write-Host "Bad IPs: $($badSet -join ', ')"
+
+# case name asked up front so a failed run doesn't leave you guessing; existence checked after IPPS connect
+if (-not $NoSearch) {
+    while ([string]::IsNullOrWhiteSpace($CaseName)) {
+        Write-Host "Enter the eDiscovery case name (your naming convention, e.g. CLIENT-BEC-$(Get-Date -Format yyyy-MM-dd))." -ForegroundColor Cyan
+        $CaseName = (Read-Host 'Case name').Trim().Trim('"', "'")
+    }
+}
 #endregion
 
 #region 3. mailbox + accessed items
@@ -237,8 +253,16 @@ Write-Host "Queries: $($queries.Count) -> $qDir"
 $results = @()
 if (-not $NoSearch -and $queries.Count) {
     Connect-Ipps
-    if ($CaseName) {
-        try { Get-ComplianceCase -Identity $CaseName | Out-Null } catch { New-ComplianceCase -Name $CaseName | Out-Null; Write-Host "Created case $CaseName" }
+    # existing case -> use it (e.g. rerun after failure) or pick a new name
+    while ($true) {
+        $existing = $null
+        try { $existing = Get-ComplianceCase -Identity $CaseName -ErrorAction Stop } catch { }
+        if (-not $existing) { New-ComplianceCase -Name $CaseName | Out-Null; Write-Host "Created case $CaseName"; break }
+        $old = @(Get-ComplianceSearch -Case $CaseName -ErrorAction SilentlyContinue)
+        Write-Warning "Case '$CaseName' already exists ($($old.Count) searches: $(($old.Name | Select-Object -First 5) -join ', '))."
+        $ans = Read-Host "[U]se existing case, or [N]ew name"
+        if ($ans -match '^[Uu]') { Write-Host "Using existing case $CaseName"; break }
+        do { $CaseName = (Read-Host 'New case name').Trim().Trim('"', "'") } while ([string]::IsNullOrWhiteSpace($CaseName))
     }
     foreach ($q in $queries) {
         $p = @{ Name = $q.Name; ExchangeLocation = $Mailbox; ContentMatchQuery = $q.Query }
