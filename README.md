@@ -23,11 +23,17 @@ Purview audit export → pick bad IPs → `MailItemsAccessed` breakdown (Bind me
 
 `-NoSearch` builds the CSVs and queries without creating searches.
 
-## Output (`.\triage_<timestamp>\`)
+## Output (`Documents\M365Triage\triage_<timestamp>\`)
+This is a fixed location, so it doesn't matter which folder the shell is in. The path is printed at the end and the folder opens automatically. Override it with `-OutDir`.
+
+Save the .ps1 anywhere and run it. Don't paste it into the console.
+
 | File | Contents |
 |---|---|
 | `ip_summary.csv` | All IPs: event / Bind / Sync counts, first/last seen, operations, clients |
 | `accessed_items.csv` | Client deliverable: InternetMessageId, TimestampUtc, IP, Bind/Sync, folder, session |
+| `files_accessed.csv` | SharePoint/OneDrive events from bad IPs: operation, file name, folder, site, full URL, share target |
+| `entra_changes.csv` | Entra changes for the user (devices, security info/MFA, consents, app/role grants, passwords). **Not IP-filtered**, because Entra records often have no client IP. `InAttackWindow` = within `-EntraWindowHours` (default 24) of the bad-IP first/last seen |
 | `badip_all_activity.csv` | Every operation from bad IPs (Send, inbox rules, deletes…) |
 | `sync_folders.csv` | Sync folders → `folderid:` values |
 | `queries\*.txt` | Chunked KQL per search |

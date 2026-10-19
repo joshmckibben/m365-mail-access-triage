@@ -20,7 +20,8 @@
 [CmdletBinding()]
 param(
     [string]$AuditCsv,                # prompted if omitted
-    [string]$OutDir = ".\triage_$(Get-Date -Format yyyyMMdd_HHmmss)",
+    [string]$OutDir,                  # default: Documents\M365Triage\triage_<timestamp>
+    [int]$EntraWindowHours = 24,      # Entra changes within this many hours of bad-IP first/last seen are flagged InAttackWindow
     [string]$Mailbox,                 # defaults to most common MailboxOwnerUPN in the export
     [string]$CaseName,                # prompted if omitted (unless -NoSearch)
     [string]$AdminUpn,                # pre-fills sign-in for EXO / IPPS
@@ -31,6 +32,12 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $stamp = Get-Date -Format yyyyMMddHHmm
+if (-not $OutDir) {
+    # fixed location regardless of the shell's current folder (admin shells start in System32)
+    $docs = [Environment]::GetFolderPath('MyDocuments')
+    if (-not $docs) { $docs = $HOME }
+    $OutDir = Join-Path (Join-Path $docs 'M365Triage') "triage_$(Get-Date -Format yyyyMMdd_HHmmss)"
+}
 
 #region helpers
 function Get-NormIP([string]$raw) {
@@ -127,6 +134,8 @@ $events = foreach ($r in $rows) {
         Owner      = $d.MailboxOwnerUPN
         UserId     = $d.UserId
         Folders    = $d.Folders
+        Workload   = $d.Workload
+        Raw        = $d
     }
 }
 Write-Host "Parsed $(@($events).Count) unique events."
@@ -199,6 +208,59 @@ $items = foreach ($e in $badMia) {
 }
 $items = @($items | Sort-Object TimestampUtc)
 $items | Select-Object * -ExcludeProperty AuditFolderId | Export-Csv (Join-Path $OutDir 'accessed_items.csv') -NoTypeInformation
+
+#region 3b. SharePoint / OneDrive file activity from bad IPs
+$files = @($events | Where-Object { $_.Workload -in 'SharePoint', 'OneDrive' -and $badSet -contains $_.IP } | Sort-Object TimeUtc | ForEach-Object {
+    $d = $_.Raw
+    [pscustomobject]@{
+        TimestampUtc = $_.TimeUtc.ToString('yyyy-MM-dd HH:mm:ss')
+        IP           = $_.IP
+        Workload     = $_.Workload
+        Operation    = $_.Operation
+        FileName     = $d.SourceFileName
+        FolderPath   = $d.SourceRelativeUrl
+        SiteUrl      = $d.SiteUrl
+        FullUrl      = $d.ObjectId
+        Extension    = $d.SourceFileExtension
+        TargetUser   = $d.TargetUserOrGroupName      # sharing events
+        UserAgent    = $d.UserAgent
+    }
+})
+$files | Export-Csv (Join-Path $OutDir 'files_accessed.csv') -NoTypeInformation
+Write-Host "SharePoint/OneDrive events from bad IPs: $($files.Count)"
+#endregion
+
+#region 3c. Entra changes (not IP-filtered - Entra records often lack client IP)
+$entraOps = 'device|security info|StrongAuthentication|consent|delegated permission|app role assignment|service principal|application|member to role|password|Update user|Disable account|Enable account|Set (company|domain)'
+$realBad   = @($badSet | Where-Object { $_ -ne '(none)' })                     # no-IP rows must not stretch the window
+$badEvents = @($events | Where-Object { $realBad -contains $_.IP })
+if (-not $badEvents) { $badEvents = @($events | Where-Object { $badSet -contains $_.IP }) }
+$winStart = ($badEvents.TimeUtc | Sort-Object | Select-Object -First 1).AddHours(-$EntraWindowHours)
+$winEnd   = ($badEvents.TimeUtc | Sort-Object | Select-Object -Last 1).AddHours($EntraWindowHours)
+$entra = @($events | Where-Object { $_.Workload -eq 'AzureActiveDirectory' -and $_.Operation -match $entraOps } | Sort-Object TimeUtc | ForEach-Object {
+    $d = $_.Raw
+    $targets = @($d.Target | ForEach-Object { $_.ID } | Where-Object { $_ -and $_ -notmatch '^[0-9a-f-]{36}$|^(User|Device|ServicePrincipal|Application|Role|Group)_' } | Sort-Object -Unique)
+    $mods = @($d.ModifiedProperties | Where-Object Name | ForEach-Object {
+        $nv = "$($_.NewValue)" -replace '\s+', ' '
+        if ($nv.Length -gt 150) { $nv = $nv.Substring(0, 150) + '...' }
+        "$($_.Name)=$nv"
+    })
+    [pscustomobject]@{
+        TimestampUtc   = $_.TimeUtc.ToString('yyyy-MM-dd HH:mm:ss')
+        InAttackWindow = ($_.TimeUtc -ge $winStart -and $_.TimeUtc -le $winEnd)
+        FromBadIP      = ($realBad -contains $_.IP)
+        IP             = $_.IP
+        Operation      = $_.Operation
+        Result         = $d.ResultStatus
+        Actor          = $_.UserId
+        Targets        = ($targets -join '; ')
+        ModifiedProps  = ($mods -join ' | ')
+    }
+})
+$entra | Export-Csv (Join-Path $OutDir 'entra_changes.csv') -NoTypeInformation
+$entraFlag = @($entra | Where-Object InAttackWindow).Count
+Write-Host "Entra changes: $($entra.Count) ($entraFlag in attack window +/-$EntraWindowHours h)"
+#endregion
 
 $bindIds     = @($items | Where-Object { $_.AccessType -ne 'Sync' -and $_.InternetMessageId } | Select-Object -ExpandProperty InternetMessageId | Sort-Object -Unique)
 $syncFolders = @($items | Where-Object AccessType -eq 'Sync' | Group-Object FolderPath)
@@ -301,8 +363,12 @@ Sync folders     : $($syncFolders.Count)  (unresolved: $(@($folderMap | Where-Ob
 Searches         : $($queries.Count)
 Bind hits        : $(($results | Where-Object Kind -eq 'Bind' | Measure-Object Items -Sum).Sum)  (vs $($bindIds.Count) IDs; diff = purged items or dupes across folders)
 Sync folder hits : $(($results | Where-Object Kind -eq 'Sync' | Measure-Object Items -Sum).Sum)
+SPO/OD events    : $($files.Count)  (files_accessed.csv)
+Entra changes    : $($entra.Count)  ($entraFlag in attack window; entra_changes.csv)
 Case             : $CaseName
+Output folder    : $((Resolve-Path $OutDir).Path)
 Next             : Purview > eDiscovery > case > each search > Export > PST
 "@
 $sum | Tee-Object -FilePath (Join-Path $OutDir 'run_summary.txt')
+if ($IsWindows -or $env:OS -eq 'Windows_NT') { try { Invoke-Item $OutDir } catch { } }
 #endregion
