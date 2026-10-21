@@ -18,8 +18,10 @@ foreach ($module in @{ Name = 'Pester'; Min = '5.5.0' }, @{ Name = 'PSScriptAnal
 }
 
 Write-Host "`n== PSScriptAnalyzer ==" -ForegroundColor Cyan
-$issues = Invoke-ScriptAnalyzer -Path (Join-Path $repo 'Invoke-MailAccessTriage.ps1') -Settings (Join-Path $repo 'PSScriptAnalyzerSettings.psd1')
-if ($issues) { $issues | Format-Table RuleName, Severity, Line, Message -AutoSize -Wrap } else { Write-Host 'No issues.' -ForegroundColor Green }
+$issues = foreach ($script in Get-ChildItem -Path $repo -Filter 'Invoke-*.ps1') {
+    Invoke-ScriptAnalyzer -Path $script.FullName -Settings (Join-Path $repo 'PSScriptAnalyzerSettings.psd1')
+}
+if ($issues) { $issues | Format-Table RuleName, Severity, ScriptName, Line, Message -AutoSize -Wrap } else { Write-Host 'No issues.' -ForegroundColor Green }
 
 Write-Host "`n== Pester ==" -ForegroundColor Cyan
 $config = New-PesterConfiguration

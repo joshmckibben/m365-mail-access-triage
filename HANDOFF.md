@@ -100,3 +100,23 @@ The analyst runs the script on Windows, against client tenants, by **pasting it 
 - Enrich `accessed_items.csv` with subject and sender via Graph (declined for now).
 - ~~A Pester test suite and CI.~~ Done 2026-10-20.
 - Add details (rule conditions, Send subjects) to `badip_all_activity.csv`.
+
+## Second script: Invoke-TenantIPSweep.ps1 (added 2026-10-21, branch `ip-sweep`, not yet run on a real tenant)
+- **Purpose:** take the bad IPs (pasted, or from the clipboard) and search the whole tenant's unified audit log for activity from them, to find other compromised accounts.
+- **Inputs (prompts):**
+  - the IPs (validated: dotted-quad IPv4 or IPv6);
+  - the first-seen date (UTC). The window is first seen minus `$LookbackDays` (14) up to now, clamped to 180 days;
+  - the client domain, the admin UPN and an optional known victim.
+- **Tenant check:** the typed domain must be in `Get-AcceptedDomain` of the signed-in tenant, then the analyst confirms the organisation name. The default answer is No.
+- **Search:** `Search-UnifiedAuditLog -IPAddresses <batch of 20> -SessionCommand ReturnLargeSet`, pages of 5000.
+  - A slice whose `ResultCount` reaches 50,000 is split in half recursively, down to 60 minutes.
+  - **Paging counts unique `Identity` values.** ReturnLargeSet repeats records, and counting rows dropped the last records silently (caught by the tests).
+  - Transient errors are retried 3 times.
+- **Local double-check:** the record's own IP field is normalised with the same `Get-NormIP` (a test keeps both scripts identical). `IPMatch = False` flags records where it differs.
+- **Assessment:** `LIKELY COMPROMISED` means any non-`UserLoginFailed` event; `Known victim`; `Failed sign-ins only`.
+- **Read-only.** Never add tenant writes to this script.
+- **Unverified (check in the lab):**
+  1. whether `-IPAddresses` matches `MailItemsAccessed` (IP in `ClientIPAddress`) and IPv6 / port forms;
+  2. how `-StartDate`/`-EndDate` treat a UTC `DateTime` (local vs UTC);
+  3. whether there's a limit on how many IPs `-IPAddresses` accepts (batches of 20 as a precaution).
+- **Later:** a message-trace check by source IP (deferred by Josh).

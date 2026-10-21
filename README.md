@@ -68,11 +68,46 @@ A fixed location, so it doesn't matter which folder the shell is in. The path is
   operations aren't in scope, because client users don't have admin rights.
 - Sign-in uses `-DisableWAM` when available, to avoid "A window handle must be configured".
 
+## Tenant-wide IP sweep (`Invoke-TenantIPSweep.ps1`)
+
+Once you know the attacker's IPs, sweep the **whole tenant** for activity from them: which other accounts did they get into?
+
+1. Open [Invoke-TenantIPSweep.ps1](Invoke-TenantIPSweep.ps1) → **Raw** → select all → copy → paste into a PowerShell console.
+2. Answer the prompts:
+   - **Bad IPs:** paste them one per line (or separated by commas/spaces), then press Enter on an empty line.
+     Or press Enter straight away to use the clipboard. Anything that isn't an IP is ignored, with a warning.
+   - **First-seen date** (UTC, `yyyy-MM-dd`, from the triage run's `ip_summary.csv`). The search runs from
+     **14 days before** that date up to now, clamped to the 180-day audit retention.
+   - **Client domain** and **admin UPN**. After sign-in, the domain must be one of the tenant's accepted domains,
+     and you confirm the organisation name before anything is searched.
+   - **Known victim** (optional), so that account is labelled rather than reported as new.
+3. Review the output (`Documents\M365Triage\ipsweep_<timestamp>\`):
+
+| File | Contents |
+|---|---|
+| `users_summary.csv` | Every account with activity from the bad IPs: **LIKELY COMPROMISED** (any successful activity) first, then the known victim, then **failed sign-ins only**. Counts of sign-ins, mail access, sends, inbox-rule changes, file events |
+| `ip_hits.csv` | Every matching event: time, user, workload, operation, IP, logon error, client. `IPMatch = False` means the search matched but the record's own IP field differs - review |
+| `failed_signins.csv` | Failed sign-ins with the logon error (password spraying vs. wrong-user attempts) |
+| `ip_summary.csv` | Per bad IP: accounts, events, first/last seen |
+| `audit_records.csv` | The raw audit records, in the same columns as a Purview export (evidence) |
+| `sweep_summary.txt` | Totals, the window and caveats |
+
+**Read-only:** the only tenant calls are sign-in, `Get-AcceptedDomain`, `Get-OrganizationConfig` and
+`Search-UnifiedAuditLog`. Needs the **View-Only Audit Logs** (or Audit Logs) role.
+
+**Limitations**
+- IP matches need human review: legitimate users can share an IP with an attacker (VPN providers, mobile carriers, cloud hosting).
+- Exact IPs only, no ranges.
+- Audit events can take up to 24 hours to appear. Re-run the next day for recent activity.
+- Token refreshes (non-interactive sign-ins) aren't in the audit log. A stolen token can show up as mail or file activity with no matching sign-in.
+- Search sessions are capped at 50,000 results. Busy time slices are split automatically, and a warning is shown if a one-hour slice still hits the cap.
+- **To verify in the lab:** that the IP filter matches `MailItemsAccessed` records (which store the IP in a different field).
+
 ## Development
 ```powershell
 ./tools/Invoke-Checks.ps1                                         # lint + Pester
 $env:TRIAGE_TEST_SHELL = 'powershell.exe'; ./tools/Invoke-Checks.ps1  # run the script under Windows PowerShell 5.1
 ```
-The tests paste the script into a fresh console process, with every tenant and UI cmdlet replaced by a
+The tests paste each script into a fresh console process, with every tenant and UI cmdlet replaced by a
 recording stub, and a fake audit export (reserved domains and IPs only). CI runs them on Linux, Windows
 (pwsh) and Windows PowerShell 5.1.
