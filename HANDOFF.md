@@ -81,7 +81,8 @@ The analyst runs the script on Windows, against client tenants, by **pasting it 
 - Classic eDiscovery was retired on 2025-08-31; this script targets the new Purview portal.
 
 ## Assumptions / unverified
-- SharePoint/OneDrive field names (`SourceFileName`, `SourceRelativeUrl`, `SiteUrl`, `ObjectId`, `SourceFileExtension`, `TargetUserOrGroupName`, `UserAgent`) and Entra field names (`Target[].ID`, `ModifiedProperties`, `ResultStatus`) come from general knowledge of the audit log schema, not from a real export. Check them against a redacted sample row.
+- ~~SharePoint/OneDrive field names~~ **Confirmed 2026-10-21** on the real incident export: OneDrive file names and paths in `files_accessed.csv` came out correctly.
+- Entra field names (`Target[].ID`, `ModifiedProperties`, `ResultStatus`) come from general knowledge of the audit log schema, not from a real export. Check them against a redacted sample row.
 - The Entra operation regex (`device|security info|StrongAuthentication|authentication method|consent|delegated permission|password`) is scoped to user-level persistence. **Unverified:** whether a user-filtered Purview export even contains the device registration events. In Entra's own audit log the actor for "Add device" is the Device Registration Service, not the user. Next step: register a device as the lab victim and check the export (EverythingIsFine lab tenant).
 - The fallback folder-ID conversion from `Folders[].Id` in the audit record is unverified. Results using it are labeled `audit Folder.Id (unverified)`.
 - `Export-Csv` writes no file when there are zero rows; the summary still shows a count of 0.
