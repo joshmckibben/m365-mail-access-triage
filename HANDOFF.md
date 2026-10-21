@@ -43,7 +43,7 @@ The analyst runs the script on Windows, against client tenants, by **pasting it 
 | settings/top | Settings region (`$SearchPrefix`, `$MaxQueryLength`, `$WaitMinutes`, `$EntraWindowHours`). Output root is `Documents\M365Triage` (or `$env:M365TRIAGE_OUTROOT`), falling back to `$HOME` | no |
 | helpers | `Get-NormIP`, `Get-UtcTime`, `ConvertTo-FolderQueryId`, `Split-Query`, `Read-YesNo`, `Get-AdminUpn` (prompted once per run, held in `$run`, never global), `Disconnect-Sessions`, `Assert-Tenant`, `Connect-Exo` / `Connect-Ipps` (always disconnect first, then verify the tenant) | — |
 | 1 parse | Prompts for the CSV path (quotes stripped, loops until the file exists); parses `AuditData`; removes duplicates by `Id`; keeps `Raw` and `Workload` on each event. Takes `$ExpectedTenant` from `OrganizationId` (stops if several; asks if none). Warns if there's no `MailItemsAccessed` | no |
-| 2 IP select | Writes `ip_summary.csv`, then the `Out-GridView` multi-select; confirms `(none)`; asks whether to create searches, then the case name | no |
+| 2 IP select | Writes `ip_summary.csv` and `ip_list.txt`, copies the IP list to the clipboard and prints it, then the `Out-GridView` multi-select; confirms `(none)`; asks whether to create searches, then the case name | no |
 | 3 mail | Mailbox pick if several owners; writes `badip_all_activity.csv` and `accessed_items.csv` (one row per Bind message ID; Sync rows carry the folder only); throttling warning | no |
 | 3b files | Writes `files_accessed.csv` (SharePoint/OneDrive workloads, bad IPs only) | no |
 | 3c Entra | Writes `entra_changes.csv`: the user's own account changes (device, MFA, consent, password), **not IP-filtered**, with `Category` and `InAttackWindow` = bad-IP first/last seen ± `$EntraWindowHours` (default 24). Device events in the window are printed | no |
@@ -95,7 +95,7 @@ The analyst runs the script on Windows, against client tenants, by **pasting it 
 ## Ideas discussed, not built
 - Combine the Bind searches into one PST via a review set, through the Graph eDiscovery API (needs eDiscovery Premium and an app registration or Graph sign-in).
 - A search covering SharePoint/OneDrive file paths so the files themselves can be exported (site locations; 4,000/2,000-character limits; returns the current version of each file).
-- Import an Entra sign-in log export as a second, optional input.
+- Import an Entra sign-in log export (interactive + non-interactive) as a second, optional input, to add Location to the grid. On hold: Josh prefers manual lookups from the clipboard IP list for now. Needs real column names from a lab download.
 - Enrich `accessed_items.csv` with subject and sender via Graph (declined for now).
 - ~~A Pester test suite and CI.~~ Done 2026-10-20.
 - Add details (rule conditions, Send subjects) to `badip_all_activity.csv`.

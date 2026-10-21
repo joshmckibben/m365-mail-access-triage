@@ -67,6 +67,7 @@ function global:New-ComplianceSearch { param(`$Name, `$Case, `$ExchangeLocation,
 function global:Start-ComplianceSearch { param(`$Identity) Log 'Start-ComplianceSearch' @{ Identity = `$Identity } }
 function global:Get-ComplianceSearch { [CmdletBinding()] param(`$Identity, `$Case)
     [pscustomobject]@{ Name = `$Identity; Status = 'Completed'; Items = 3; Size = 1024; Errors = `$null } }
+function global:Set-Clipboard { param(`$Value) `$global:Clipboard = `$Value }
 function global:Start-Sleep { param(`$Seconds) }
 function global:Invoke-Item { param(`$Path) }
 
@@ -85,6 +86,7 @@ catch { `$err = `$_.Exception.Message }
     Calls      = @(`$global:Calls | ForEach-Object { [pscustomobject]@{ Name = `$_.Name; Params = `$_.Params } })
     Prompts    = @(`$global:Prompts)
     Unanswered = `$global:Answers.Count
+    Clipboard  = `$global:Clipboard
     OutDir     = if (`$outDir) { `$outDir.FullName } else { `$null }
     EapAfter   = "`$ErrorActionPreference"
     Leaked     = @('run', 'AdminUpn', 'CaseName', 'events', 'badSet' | Where-Object { Get-Variable -Name `$_ -Scope Global -ErrorAction SilentlyContinue })
@@ -127,6 +129,14 @@ Describe 'Happy path (pasted into a console)' {
         $ids = @($items | Where-Object InternetMessageId | ForEach-Object InternetMessageId | Sort-Object)
         $ids | Should -Be @('<msg1@contoso.example>', '<msg2@contoso.example>', '<msg3@contoso.example>')
         @($items | Where-Object AccessType -eq 'Sync').Count | Should -Be 1
+    }
+
+    It 'Copies the IPs (not "(none)") to the clipboard and ip_list.txt before the grid, in grid order' {
+        $expected = @((Import-Out $R 'ip_summary.csv') | Where-Object IP -ne '(none)' | ForEach-Object IP)
+        $expected | Should -Contain $script:BadIP
+        @($R.Clipboard -split "\r?\n") | Should -Be $expected
+        @(Get-Content (Join-Path $R.OutDir 'ip_list.txt')) | Should -Be $expected
+        $R.Console | Should -Match 'Copied \d+ IPs to the clipboard'
     }
 
     It 'Normalises IPv6 with a port and IPv4 with a port' {

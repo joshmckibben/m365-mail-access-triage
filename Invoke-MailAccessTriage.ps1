@@ -219,6 +219,19 @@ $summary = $events | Group-Object IP | ForEach-Object {
 New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
 $summary | Export-Csv (Join-Path $OutDir 'ip_summary.csv') -NoTypeInformation
 
+# IP list for manual lookups (bulk IP lookup sites): clipboard + console + ip_list.txt, same order as the grid.
+# The grid waits for your selection, so you can paste the list into a browser first, then come back and pick.
+$ipList = @($summary | Where-Object IP -ne '(none)' | ForEach-Object IP)
+$ipList | Set-Content -LiteralPath (Join-Path $OutDir 'ip_list.txt') -Encoding UTF8
+Write-Host "`nIPs in this export ($($ipList.Count), most events first):" -ForegroundColor Cyan
+$summary | Where-Object IP -ne '(none)' | ForEach-Object { Write-Host ("  {0,-40} events {1,6}  MailItemsAccessed {2,6}" -f $_.IP, $_.Events, $_.MailItemsAccessed) }
+try {
+    Set-Clipboard -Value ($ipList -join [Environment]::NewLine)
+    Write-Host "Copied $($ipList.Count) IPs to the clipboard (also in ip_list.txt). Paste them into an IP lookup site, then pick the bad ones in the grid." -ForegroundColor Green
+} catch {
+    Write-Host "Couldn't copy to the clipboard; the list is in $(Join-Path $OutDir 'ip_list.txt')." -ForegroundColor Yellow
+}
+
 $bad = $summary | Out-GridView -Title 'Select BAD IPs (Ctrl/Shift-click), then OK' -PassThru
 if (-not $bad) { Write-Host "No IPs selected. ip_summary.csv written to $OutDir; exiting."; return }
 $badSet = @($bad.IP)

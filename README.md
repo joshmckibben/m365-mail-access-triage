@@ -17,7 +17,9 @@ Purview audit export → pick bad IPs → `MailItemsAccessed` breakdown (Bind me
    The whole script runs inside one script block, so nothing is left behind in your console afterwards.
 3. Answer the prompts:
    - **Audit CSV path**, without quotation marks (quotes are stripped if you add them anyway).
-   - **Bad IPs:** select them in the grid → OK. Selecting `(none)` (events without an IP) asks for confirmation.
+   - **Bad IPs:** just before the grid opens, every IP is **copied to your clipboard** (most events first), printed in
+     the console and saved as `ip_list.txt`. The grid waits for you, so you can paste the list into a bulk IP lookup
+     site first, then come back and select the bad ones → OK. Selecting `(none)` (events without an IP) asks for confirmation.
    - **Create the eDiscovery case and searches?** Answer `n` to build the CSVs and query files only.
    - **Case name.** If that case already exists, you're shown its searches and choose to [U]se it or enter a [N]ew name.
    - **Admin UPN** for *this client's* tenant. It's asked once per run and never reused by a later run.
@@ -39,6 +41,7 @@ A fixed location, so it doesn't matter which folder the shell is in. The path is
 | File | Contents |
 |---|---|
 | `ip_summary.csv` | All IPs: event / Bind / Sync counts, first/last seen, operations, clients |
+| `ip_list.txt` | Just the IPs, one per line (also copied to the clipboard), for bulk lookup sites |
 | `accessed_items.csv` | Client deliverable: InternetMessageId, TimestampUtc, IP, Bind/Sync, folder, session |
 | `files_accessed.csv` | SharePoint/OneDrive events from bad IPs: operation, file name, folder, site, full URL, share target |
 | `entra_changes.csv` | The user's own account changes: **device registration**, MFA / security info, app consent, password. Category column. **Not IP-filtered**, because Entra records often have no client IP. `InAttackWindow` = within 24 h (setting) of the bad-IP first/last seen. Device events in the window are also printed as a warning |
