@@ -66,7 +66,8 @@ BeforeAll {
 `$global:Prompts = [System.Collections.Generic.List[string]]::new()
 `$global:Calls   = [System.Collections.Generic.List[object]]::new()
 `$global:Conn    = [System.Collections.Generic.List[object]]::new()
-`$global:Data    = @(Get-Content -LiteralPath '$dataFile' -Raw | ConvertFrom-Json)
+# Windows PowerShell 5.1's ConvertFrom-Json emits a JSON array as ONE object; piping it on unrolls it.
+`$global:Data    = @((Get-Content -LiteralPath '$dataFile' -Raw | ConvertFrom-Json) | ForEach-Object { `$_ })
 `$global:Offsets = @{}
 
 function global:Log([string]`$Name, [hashtable]`$Params) { `$global:Calls.Add([pscustomobject]@{ Name = `$Name; Params = `$Params }) }
