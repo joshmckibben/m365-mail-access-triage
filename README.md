@@ -1,39 +1,47 @@
 # m365-mail-access-triage
 
+[![checks](https://github.com/joshmckibben/m365-mail-access-triage/actions/workflows/checks.yml/badge.svg)](https://github.com/joshmckibben/m365-mail-access-triage/actions/workflows/checks.yml)
+
 BEC / compromised-mailbox triage for Microsoft 365.
 
 Purview audit export → pick bad IPs → `MailItemsAccessed` breakdown (Bind message IDs + Sync folders) → eDiscovery searches ready for PST export.
 
 ## Requirements
-- Windows PowerShell 5.1 or PowerShell 7 on Windows (uses `Out-GridView`)
+- Windows, PowerShell 7 or Windows PowerShell 5.1 (uses `Out-GridView`)
 - `ExchangeOnlineManagement` module 3.7.2+ (`Install-Module ExchangeOnlineManagement`)
 - Rights: folder statistics on the mailbox; eDiscovery Manager for searches
 
 ## Usage
-1. Purview → Audit → search the account for the access window → export CSV.
-2. Run:
-   ```powershell
-   .\Invoke-MailAccessTriage.ps1 -AuditCsv "C:\path\export.csv" -CaseName "Client-BEC-2026-10" -AdminUpn you@tenant.com
-   ```
-   Or run with no parameters and answer the prompts. At the CSV path prompt, enter the path **without quotation marks** (quotes are stripped if you add them anyway).
-3. Select the bad IPs in the grid → OK.
-   - If `-CaseName` wasn't given, you're asked for the case name next.
-   - If that case already exists, you're shown its searches and choose to [U]se it or enter a [N]ew name.
+1. Purview → Audit → search **the affected user only** (so every workload is included) for the access window → export CSV.
+2. Open [Invoke-MailAccessTriage.ps1](Invoke-MailAccessTriage.ps1) → **Raw** → select all → copy → **paste into a PowerShell console**.
+   The whole script runs inside one script block, so nothing is left behind in your console afterwards.
+3. Answer the prompts:
+   - **Audit CSV path**, without quotation marks (quotes are stripped if you add them anyway).
+   - **Bad IPs:** select them in the grid → OK. Selecting `(none)` (events without an IP) asks for confirmation.
+   - **Create the eDiscovery case and searches?** Answer `n` to build the CSVs and query files only.
+   - **Case name.** If that case already exists, you're shown its searches and choose to [U]se it or enter a [N]ew name.
+   - **Admin UPN** for *this client's* tenant. It's asked once per run and never reused by a later run.
+   - **Mailbox**, only if the export covers more than one.
 4. Purview → eDiscovery → case → each search → Export → PST.
 
-`-NoSearch` builds the CSVs and queries without creating searches.
+Settings at the top of the script (query length, polling time, Entra window) can be edited before pasting.
+To write output somewhere other than `Documents\M365Triage`, set `$env:M365TRIAGE_OUTROOT` before pasting.
+
+## Tenant safety
+- The export says which tenant it came from (`OrganizationId` in every record). After **every** sign-in, the
+  script checks the session is in that tenant. On a mismatch it disconnects and stops **before anything is created**.
+- Existing Exchange / Purview sessions in the console are disconnected first, never reused. They might belong to another client.
+- The only tenant writes are `New-ComplianceCase`, `New-ComplianceSearch` and `Start-ComplianceSearch`.
 
 ## Output (`Documents\M365Triage\triage_<timestamp>\`)
-This is a fixed location, so it doesn't matter which folder the shell is in. The path is printed at the end and the folder opens automatically. Override it with `-OutDir`.
-
-Save the .ps1 anywhere and run it. Don't paste it into the console.
+A fixed location, so it doesn't matter which folder the shell is in. The path is printed at the end and the folder opens automatically.
 
 | File | Contents |
 |---|---|
 | `ip_summary.csv` | All IPs: event / Bind / Sync counts, first/last seen, operations, clients |
 | `accessed_items.csv` | Client deliverable: InternetMessageId, TimestampUtc, IP, Bind/Sync, folder, session |
 | `files_accessed.csv` | SharePoint/OneDrive events from bad IPs: operation, file name, folder, site, full URL, share target |
-| `entra_changes.csv` | Entra changes for the user (devices, security info/MFA, consents, app/role grants, passwords). **Not IP-filtered**, because Entra records often have no client IP. `InAttackWindow` = within `-EntraWindowHours` (default 24) of the bad-IP first/last seen |
+| `entra_changes.csv` | The user's own account changes: **device registration**, MFA / security info, app consent, password. Category column. **Not IP-filtered**, because Entra records often have no client IP. `InAttackWindow` = within 24 h (setting) of the bad-IP first/last seen. Device events in the window are also printed as a warning |
 | `badip_all_activity.csv` | Every operation from bad IPs (Send, inbox rules, deletes…) |
 | `sync_folders.csv` | Sync folders → `folderid:` values |
 | `queries\*.txt` | Chunked KQL per search |
@@ -43,7 +51,25 @@ Save the .ps1 anywhere and run it. Don't paste it into the console.
 ## Notes / caveats
 - **Bind** events list individual InternetMessageIds. **Sync** events only list folders; treat the whole folder as accessed.
 - If `Throttled = True` appears, Bind logging is incomplete; treat the whole mailbox as accessed for that window.
-- `InternetMessageId:` as a KQL property is unverified per tenant. If Bind searches return 0, test one ID by hand.
-- Bind hits < ID count usually means the items were purged or are duplicated across folders.
-- `-MaxQueryLength` (default 3500) is a guess at the KQL limit; lower it if searches error.
+- **No `MailItemsAccessed` events at all** → the script warns. The tenant may not be logging mail access
+  (licence / audit tier). That's not evidence that no mail was read.
+- `InternetMessageId:` works as a KQL property: on a real incident (2026-10), 92 message IDs returned 88 items.
+  Bind hits below the ID count usually mean the items were purged or are duplicated across folders.
+  If a tenant returns 0 Bind hits, test one ID by hand in the portal.
+- **Query length:** the mailbox search limit is 10,000 characters, counted *after* expansion and including any
+  search permissions filters applied to the searching account. Message-ID and folderid terms are exact values
+  (no wildcards), so they don't expand. The default of **9,000** leaves 1,000 characters of headroom. That's about
+  115 message IDs per search, so fewer searches and fewer PST exports. If a search ever errors on length, lower
+  `$MaxQueryLength` in the settings.
+- **Entra scope:** user-level changes only (what an attacker can do with the user's own access). Admin-only
+  operations aren't in scope, because client users don't have admin rights.
 - Sign-in uses `-DisableWAM` when available, to avoid "A window handle must be configured".
+
+## Development
+```powershell
+./tools/Invoke-Checks.ps1                                         # lint + Pester
+$env:TRIAGE_TEST_SHELL = 'powershell.exe'; ./tools/Invoke-Checks.ps1  # run the script under Windows PowerShell 5.1
+```
+The tests paste the script into a fresh console process, with every tenant and UI cmdlet replaced by a
+recording stub, and a fake audit export (reserved domains and IPs only). CI runs them on Linux, Windows
+(pwsh) and Windows PowerShell 5.1.
