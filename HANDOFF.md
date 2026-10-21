@@ -101,7 +101,7 @@ The analyst runs the script on Windows, against client tenants, by **pasting it 
 - ~~A Pester test suite and CI.~~ Done 2026-10-20.
 - Add details (rule conditions, Send subjects) to `badip_all_activity.csv`.
 
-## Second script: Invoke-TenantIPSweep.ps1 (added 2026-10-21, branch `ip-sweep`, not yet run on a real tenant)
+## Second script: Invoke-TenantIPSweep.ps1 (added 2026-10-21; lab-tested by Josh and merged to main 2026-10-21; not yet used on a real incident)
 - **Purpose:** take the bad IPs (pasted, or from the clipboard) and search the whole tenant's unified audit log for activity from them, to find other compromised accounts.
 - **Inputs (prompts):**
   - the IPs (validated: dotted-quad IPv4 or IPv6);
