@@ -13,7 +13,7 @@ Purview audit export → pick bad IPs → `MailItemsAccessed` breakdown (Bind me
 
 ## Usage
 1. Purview → Audit → search **the affected user only** (so every workload is included) for the access window → export CSV.
-2. Open [Invoke-MailAccessTriage.ps1](Invoke-MailAccessTriage.ps1) → **Raw** → select all → copy → **paste into a PowerShell console**.
+2. Get the script as described in [Run a verified copy](#run-a-verified-copy), then **paste it into a PowerShell console**.
    The whole script runs inside one script block, so nothing is left behind in your console afterwards.
 3. Answer the prompts:
    - **Audit CSV path**, without quotation marks (quotes are stripped if you add them anyway).
@@ -26,8 +26,44 @@ Purview audit export → pick bad IPs → `MailItemsAccessed` breakdown (Bind me
    - **Mailbox**, only if the export covers more than one.
 4. Purview → eDiscovery → case → each search → Export → PST.
 
-Settings at the top of the script (query length, polling time, Entra window) can be edited before pasting.
+Settings at the top of the script (query length, polling time, Entra window) can be edited before pasting, but only
+after the hash check, and an edited copy is no longer the approved one. Prefer the defaults on a real incident.
 To write output somewhere other than `Documents\M365Triage`, set `$env:M365TRIAGE_OUTROOT` before pasting.
+
+## Run a verified copy
+Don't run either script from `main`. Run a tagged release, and check it against the hash in your release note before
+pasting. The release note is kept **outside GitHub**, somewhere only you can write. A hash stored in this repo proves
+nothing, because anything that can change the script here could change the hash too.
+
+1. Open a fresh PowerShell console and your release note.
+2. Copy the checker from the note and paste it into the console. It waits for you.
+3. Open the script's Raw link from the note → select all → copy → back in the console, press **Enter**.
+4. **MATCH** (green): paste the script into the console. It's still on the clipboard. Don't copy anything else first.
+5. **NO MATCH** (red): don't paste it. Recopy once, in case the first copy was incomplete. If it still fails, stop, and
+   use the previous release in your note until you know why.
+
+The checker only reads the clipboard: it doesn't run, download or save anything. Nothing goes to disk, so the limit on
+unsigned `.ps1` files doesn't come into it. It ignores line endings and blank lines at the very end, because browsers
+change those when copying. Everything else has to match exactly.
+
+No note to hand means no verified copy. Don't fall back to `main`.
+
+## Releasing
+Only a person does this, and only from a device that can reach the release note. Agents may prepare a branch and these
+steps, but they never tag, and any hash they report is not the trusted one.
+
+1. Review the changes on GitHub: `compare/<previous tag>...main`. Read every change to the two scripts.
+2. Create the release and tag on merged `main`: `vMAJOR.MINOR.PATCH`.
+3. Review `compare/<previous tag>...<new tag>`. It should show what you reviewed in step 1, nothing more.
+4. Paste your checker and copy each script from its tag's Raw page. It prints `NO MATCH` with the SHA-256, because the
+   note doesn't know this release yet. Those are the new hashes.
+5. Add them to the checker in your note with the new version, and update the Raw links:
+   `https://raw.githubusercontent.com/joshmckibben/m365-mail-access-triage/refs/tags/<tag>/<script>.ps1`
+   Keep the previous release in the note as the fallback.
+
+Keep using the checker already in your note. `tools/Confirm-PastedScript.ps1` is its source and is covered by the tests,
+but copy it from the repo only when you've read that diff too. To work out a hash without the checker, on a copy with
+LF endings: `printf %s "$(cat <script>.ps1)" | sha256sum`.
 
 ## Tenant safety
 - The export says which tenant it came from (`OrganizationId` in every record). After **every** sign-in, the
@@ -72,7 +108,7 @@ A fixed location, so it doesn't matter which folder the shell is in. The path is
 
 Once you know the attacker's IPs, sweep the **whole tenant** for activity from them: which other accounts did they get into?
 
-1. Open [Invoke-TenantIPSweep.ps1](Invoke-TenantIPSweep.ps1) → **Raw** → select all → copy → paste into a PowerShell console.
+1. Get the script as described in [Run a verified copy](#run-a-verified-copy), then paste it into a PowerShell console.
 2. Answer the prompts:
    - **Bad IPs:** paste them one per line (or separated by commas/spaces), then press Enter on an empty line.
      Or press Enter straight away to use the clipboard. Anything that isn't an IP is ignored, with a warning.
@@ -110,4 +146,5 @@ $env:TRIAGE_TEST_SHELL = 'powershell.exe'; ./tools/Invoke-Checks.ps1  # run the 
 ```
 The tests paste each script into a fresh console process, with every tenant and UI cmdlet replaced by a
 recording stub, and a fake audit export (reserved domains and IPs only). CI runs them on Linux, Windows
-(pwsh) and Windows PowerShell 5.1.
+(pwsh) and Windows PowerShell 5.1. `tests/Confirm-PastedScript.Tests.ps1` does the same for the hash checker, with a
+stubbed clipboard.

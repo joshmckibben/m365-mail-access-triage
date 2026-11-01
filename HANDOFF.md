@@ -24,12 +24,22 @@ The analyst runs the script on Windows, against client tenants, by **pasting it 
 - **Tested only against fake data** (a mock CSV and fake tenant commands): `files_accessed.csv`, `entra_changes.csv` and the field mapping for both. They were added in `247eec9` and haven't yet been checked against a real export.
 
 ## Repo
-- `joshmckibben/m365-mail-access-triage`, branch `main`.
+- `joshmckibben/m365-mail-access-triage`, branch `main`. Development happens here. Analysts run tagged releases, not `main`.
 - `Invoke-MailAccessTriage.ps1`: the script (single file, about 470 lines, one pasted script block).
 - `tests/`: `New-FakeAuditExport.ps1` (fake export, reserved domains/IPs only) and `Invoke-MailAccessTriage.Tests.ps1`.
 - `tools/Invoke-Checks.ps1`: lint + tests. `.github/workflows/checks.yml`: CI.
-- `README.md`: usage, the outputs table and caveats.
+- `tools/Confirm-PastedScript.ps1`: the hash checker, pasted before the script (see "Run procedure").
+- `README.md`: usage, the run and release steps, the outputs table and caveats.
+- `STATUS.md`: where the work stands, what's next, what's blocked. Update it at the end of each session.
 - `.gitignore`: excludes `triage_*/` and `*.csv`. Never commit client data.
+
+## Run procedure
+- Scripts are pasted from a **tagged release**, never from Raw on `main`, after the clipboard passes a SHA-256 check. Steps are in `README.md` ("Run a verified copy", "Releasing").
+- The trusted hashes live outside GitHub, in a place agents can't write. A hash in this repo doesn't count, and neither does a hash an agent reports. Josh works it out himself after reviewing the tag.
+- The checker must be pasted **before** the script is copied, because copying the checker would replace the script on the clipboard. That's why it waits at a prompt.
+- The checker only reads the clipboard. It never runs the script: the real paste stays the only way to run it, and the tests enforce that it calls nothing but `Read-Host`, `Get-Clipboard` and `Write-Host`.
+- Hashes cover text with LF endings and no trailing whitespace at the end of the file, not the file's raw bytes, because a browser copy changes those.
+- Agents never tag, release, merge to `main` or change repo settings on this project.
 
 ## Runtime requirements
 - Windows PowerShell 5.1, or PowerShell 7 on Windows. `Out-GridView` is Windows-only.
@@ -91,6 +101,7 @@ The analyst runs the script on Windows, against client tenants, by **pasting it 
 - `tests/Invoke-MailAccessTriage.Tests.ps1` runs each scenario in a fresh console process, **pasting** the script (`Invoke-Expression` of its text). Stubs record every call to `Out-GridView`, `Read-Host` (scripted answers), `Connect-*`, `Disconnect-ExchangeOnline`, `Get-ConnectionInformation`, `Get-MailboxFolderStatistics`, `*-ComplianceCase` and `*-ComplianceSearch`.
 - `tests/New-FakeAuditExport.ps1` covers Bind (with a duplicate record), Sync (IPv4 with a port), legitimate IPs (including IPv6 with a port), an inbox rule, a OneDrive download, device registration in and out of the attack window, security info, `Update user.` (out of scope) and mixed-tenant / no-mail-access variants.
 - Tenant-safety tests fail against the pre-hardening script (commit `4278921`).
+- `tests/Confirm-PastedScript.Tests.ps1` pastes the checker the same way, with a stubbed clipboard: browser line-ending variants, tampering, an empty clipboard and a bad copy. It can't exercise a real browser and clipboard.
 - `TRIAGE_TEST_SHELL=powershell.exe` runs the script under Windows PowerShell 5.1 (CI does this on Windows).
 
 ## Ideas discussed, not built
