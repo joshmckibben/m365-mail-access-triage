@@ -18,7 +18,7 @@ foreach ($module in @{ Name = 'Pester'; Min = '5.5.0' }, @{ Name = 'PSScriptAnal
 }
 
 Write-Host "`n== PSScriptAnalyzer ==" -ForegroundColor Cyan
-$issues = foreach ($script in Get-ChildItem -Path $repo -Filter 'Invoke-*.ps1') {
+$issues = foreach ($script in @(Get-ChildItem -Path $repo -Filter 'Invoke-*.ps1') + (Get-Item (Join-Path $repo 'tools/Confirm-PastedScript.ps1'))) {
     Invoke-ScriptAnalyzer -Path $script.FullName -Settings (Join-Path $repo 'PSScriptAnalyzerSettings.psd1')
 }
 if ($issues) { $issues | Format-Table RuleName, Severity, ScriptName, Line, Message -AutoSize -Wrap } else { Write-Host 'No issues.' -ForegroundColor Green }
